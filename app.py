@@ -6,6 +6,7 @@ from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from datetime import datetime
 import json
 import os
+import base64 # 암호 해독 도구
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="업무 관리 시스템", layout="wide")
@@ -21,37 +22,33 @@ def connect_to_gsheet():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # 1. 로컬 환경
+    # 1. 로컬 환경 (내 컴퓨터)
     if os.path.exists("service_account.json"):
         creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
     
-    # 2. 클라우드 환경
+    # 2. 클라우드 환경 (Streamlit Cloud)
     else:
         try:
-            secret_val = st.secrets["gcp_service_account"]["json_key"]
-            
-            # 문자열이면 딕셔너리로 변환
-            if isinstance(secret_val, str):
-                key_dict = json.loads(secret_val)
+            # 🔥 [여기가 수정됨] json_key 대신 encoded_key를 찾도록 변경!
+            if "encoded_key" in st.secrets["gcp_service_account"]:
+                encoded_val = st.secrets["gcp_service_account"]["encoded_key"]
+                # Base64 암호 해독
+                decoded_val = base64.b64decode(encoded_val).decode("utf-8")
+                key_dict = json.loads(decoded_val)
+                creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
             else:
-                key_dict = secret_val
-            
-            # 🔥 [여기가 핵심 수정] Private Key의 줄바꿈 문자(\n)를 진짜 엔터키로 변환
-            # 이 코드가 없으면 MalformedFraming 에러가 납니다.
-            if "private_key" in key_dict:
-                key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
-            
-            creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+                st.error("Secrets에 'encoded_key'가 없습니다. 설정을 확인해주세요.")
+                st.stop()
             
         except Exception as e:
-            st.error(f"⚠️ 인증 에러: {e}")
+            st.error(f"⚠️ 인증 실패: {e}")
             st.stop()
             
     client = gspread.authorize(creds)
     sheet = client.open(SHEET_URL).sheet1
     return sheet
 
-# --- 이 아래는 기존 코드와 완전히 동일합니다 ---
+# --- 아래는 기존과 동일 ---
 
 try:
     worksheet = connect_to_gsheet()
@@ -230,6 +227,3 @@ def render_project_list(target_df):
 
 with tab1: render_project_list(active_df)
 with tab2: render_project_list(completed_df)
-
-# 업데이트 확인용 주석
-# 줄바꿈 에러 수정 재시도
