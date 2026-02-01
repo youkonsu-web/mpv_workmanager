@@ -232,3 +232,4 @@ with tab1: render_project_list(active_df)
 with tab2: render_project_list(completed_df)
 
 # 업데이트 확인용 주석
+# 줄바꿈 에러 수정 재시도
