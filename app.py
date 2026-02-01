@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from google.oauth2.service_account import Credentials # 최신 인증 라이브러리
+from google.oauth2.service_account import Credentials
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from datetime import datetime
 import json
@@ -14,41 +14,44 @@ st.title("🎬 프로젝트 업무 관리 (Google Sheets Ver.)")
 # --- [설정] 구글 시트 연결 ---
 SHEET_URL = "WorkDB" 
 
-# 구글 시트 인증 및 연결 함수 (최신 google-auth 라이브러리 사용)
 @st.cache_resource
 def connect_to_gsheet():
-    # 스코프 설정
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # 1. 로컬 환경: 파일이 있으면 파일로 인증
+    # 1. 로컬 환경
     if os.path.exists("service_account.json"):
         creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
     
-    # 2. 클라우드 환경: Secrets에서 가져오기
+    # 2. 클라우드 환경
     else:
         try:
-            # Secrets에서 값을 가져옴
             secret_val = st.secrets["gcp_service_account"]["json_key"]
             
-            # 값이 문자열(String)이면 딕셔너리로 변환 (이 부분이 에러 해결 핵심!)
+            # 문자열이면 딕셔너리로 변환
             if isinstance(secret_val, str):
                 key_dict = json.loads(secret_val)
             else:
                 key_dict = secret_val
             
-            # 딕셔너리 정보로 인증 생성
+            # 🔥 [여기가 핵심 수정] Private Key의 줄바꿈 문자(\n)를 진짜 엔터키로 변환
+            # 이 코드가 없으면 MalformedFraming 에러가 납니다.
+            if "private_key" in key_dict:
+                key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+            
             creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
             
         except Exception as e:
-            st.error(f"⚠️ 인증 에러: Secrets 설정을 확인해주세요.\n{e}")
+            st.error(f"⚠️ 인증 에러: {e}")
             st.stop()
             
     client = gspread.authorize(creds)
     sheet = client.open(SHEET_URL).sheet1
     return sheet
+
+# --- 이 아래는 기존 코드와 완전히 동일합니다 ---
 
 try:
     worksheet = connect_to_gsheet()
@@ -56,7 +59,6 @@ except Exception as e:
     st.error(f"구글 시트 연결 실패! 시트 이름('{SHEET_URL}') 확인 및 봇 초대를 확인하세요.\n에러: {e}")
     st.stop()
 
-# 2. 데이터 불러오기
 def load_data():
     default_columns = ['년도', '월', '프로젝트명', '설명', '진행상태', '담당PD', '기획', '촬영', '편집', '디자인', 'CG', '색보정', 'SFX', 'BGM', '시사']
     try:
@@ -74,7 +76,6 @@ def load_data():
     except Exception as e:
         return pd.DataFrame(columns=default_columns)
 
-# 3. 데이터 저장하기
 def save_data(df):
     try:
         worksheet.clear()
@@ -83,10 +84,8 @@ def save_data(df):
     except Exception as e:
         st.error(f"저장 실패: {e}")
 
-# 데이터 로드
 df = load_data()
 
-# 4. 사이드바 및 로직 (기존과 동일)
 st.sidebar.header("📅 날짜 선택")
 current_year = datetime.now().year
 current_month = datetime.now().month
@@ -111,7 +110,6 @@ status_colors = {
     '후반작업': 'violet', '시사': 'green', '완료': 'grey', '보류': 'grey'
 }
 
-# 5. 프로젝트 추가
 with st.expander("➕ 새 프로젝트 추가하기"):
     with st.form("new_project_form"):
         col1, col2 = st.columns(2)
@@ -139,7 +137,6 @@ with st.expander("➕ 새 프로젝트 추가하기"):
                 st.success(f"✅ '{new_name}' 추가됨")
                 st.rerun()
 
-# 6. 리스트 출력
 st.divider()
 st.subheader(f"{selected_year}년 {selected_month}월 프로젝트")
 
